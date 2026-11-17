@@ -5,11 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Bornes de recharge</title>
 <style>
-:root{--bg:#f4f6f8;--card:#fff;--tx:#1b2430;--mut:#6b7785;--bd:#dde3ea;--ok:#1e9e5a;--ko:#d6453d;--off:#8a94a0;--okbg:#e4f6ec;--kobg:#fbe8e6;--offbg:#eceff2;--hsbg:#f3bdb8;
+:root{--bg:#f4f6f8;--card:#fff;--tx:#1b2430;--mut:#6b7785;--bd:#dde3ea;--ok:#1e9e5a;--ko:#d6453d;--off:#8a94a0;--okbg:#e4f6ec;--kobg:#fbe8e6;--hsbg:#f3bdb8;
 box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12171d;--card:#1b222b;--tx:#e8edf2;--mut:#98a4b1;--bd:#2c3642;--ok:#3ccf82;--ko:#ff7a70;--off:#8a94a0;--okbg:#14301f;--kobg:#3a1d1b;--offbg:#252d36;--hsbg:#5c2724;color-scheme:dark}}
-:root[data-theme="dark"]{--bg:#12171d;--card:#1b222b;--tx:#e8edf2;--mut:#98a4b1;--bd:#2c3642;--ok:#3ccf82;--ko:#ff7a70;--off:#8a94a0;--okbg:#14301f;--kobg:#3a1d1b;--offbg:#252d36;--hsbg:#5c2724;color-scheme:dark}
-html{scroll-padding-top:env(safe-area-inset-top,0px)}
+@media (prefers-color-scheme:dark){:root{--bg:#12171d;--card:#1b222b;--tx:#e8edf2;--mut:#98a4b1;--bd:#2c3642;--ok:#3ccf82;--ko:#ff7a70;--okbg:#14301f;--kobg:#3a1d1b;--hsbg:#5c2724;color-scheme:dark}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
 main{max-width:640px;margin:0 auto;padding:20px 16px 32px}
@@ -30,6 +28,7 @@ button.on{font-weight:700;border-color:var(--tx)}
 input[type=time]{font:inherit;font-size:14px;padding:7px;border-radius:9px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);width:100%;margin-top:8px}
 label{font-size:12px;color:var(--mut);display:block;margin-top:8px}
 .note{color:var(--mut);font-size:12px;margin-top:16px;text-align:center}
+.note.err{color:var(--ko)}
 </style>
 </head>
 <body>
@@ -40,70 +39,99 @@ label{font-size:12px;color:var(--mut);display:block;margin-top:8px}
 <div id="grid" class="grid"></div>
 <p class="note" id="note"></p>
 </main>
-<script>
-(function(){
-var N=4,LABEL={libre:"Libre",occupee:"Occupée",off:"Hors service"};
-var state={};for(var i=1;i<=N;i++)state["b"+i]={status:"libre",until:"",ts:0};
-var col=null,shared=false;
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, collection, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-function ago(ts){if(!ts)return"";var m=Math.round((Date.now()-ts)/60000);if(m<1)return"mis à jour à l’instant";if(m<60)return"mis à jour il y a "+m+" min";var h=Math.round(m/60);return"mis à jour il y a "+h+" h"}
+/* ====== A REMPLACER par les valeurs de votre projet Firebase ====== */
+const firebaseConfig = {
+  apiKey: "AIzaSyDBNF02q4T23p_dMwFrxT2NOK3a8WfUV0k",
+  authDomain: "bornes-vdm.firebaseapp.com",
+  projectId: "bornes-vdm",
+  storageBucket: "bornes-vdm.firebasestorage.app",
+  messagingSenderId: "614048764769",
+  appId: "1:614048764769:web:839225a65a9acae2eb2b20"
+};
+/* ================================================================== */
 
-function render(){
- var free=0;for(var k in state)if(state[k].status==="libre")free++;
- var s=document.getElementById("sum");
- s.className="sum "+(free>0?"ok":"ko");
- s.textContent=free>0?(free+(free>1?" bornes libres":" borne libre")+" sur "+N):"Aucune borne libre pour le moment";
- var g=document.getElementById("grid");g.innerHTML="";
- for(var i=1;i<=N;i++){
-  (function(id,n){
-   var d=state[id],c=document.createElement("div");
-   c.className="card "+d.status;
-   var nm=document.createElement("div");nm.className="name";nm.textContent="Borne "+n;c.appendChild(nm);
-   var st=document.createElement("div");st.className="st";st.textContent=LABEL[d.status];c.appendChild(st);
-   var mt=document.createElement("div");mt.className="meta";
-   mt.textContent=(d.status==="occupee"&&d.until?"Libre vers "+d.until+" · ":"")+ago(d.ts);c.appendChild(mt);
-   var b=document.createElement("div");b.className="btns";
-   ["libre","occupee","off"].forEach(function(v){
-    var x=document.createElement("button");x.textContent=LABEL[v];if(d.status===v)x.className="on";
-    x.onclick=function(){save(id,{status:v,until:v==="occupee"?d.until:"",ts:Date.now()})};b.appendChild(x)});
-   c.appendChild(b);
-   if(d.status==="occupee"){
-    var l=document.createElement("label");l.textContent="Heure de fin estimée (facultatif)";c.appendChild(l);
-    var t=document.createElement("input");t.type="time";t.value=d.until||"";
-    t.onchange=function(){save(id,{status:"occupee",until:t.value,ts:Date.now()})};c.appendChild(t);
-   }
-   g.appendChild(c);
-  })("b"+i,i);
- }
- document.getElementById("note").textContent=shared?"Statut partagé en direct entre tous les utilisateurs.":"Mode local : le statut n’est pas partagé (ouvrez la page connecté pour le partager).";
+const N = 4;
+const LABEL = { libre: "Libre", occupee: "Occupée", off: "Hors service" };
+const state = {};
+for (let i = 1; i <= N; i++) state["b" + i] = { status: "libre", until: "", ts: 0 };
+
+let col = null, shared = false, errMsg = "";
+
+function ago(ts) {
+  if (!ts) return "";
+  const m = Math.round((Date.now() - ts) / 60000);
+  if (m < 1) return "mis à jour à l’instant";
+  if (m < 60) return "mis à jour il y a " + m + " min";
+  return "mis à jour il y a " + Math.round(m / 60) + " h";
 }
 
-function save(id,data){
- state[id]=data;render();
- if(col){try{col.doc(id).set(data).catch(function(e){console.error(e)})}catch(e){console.error(e)}}
+function render() {
+  let free = 0;
+  for (const k in state) if (state[k].status === "libre") free++;
+  const s = document.getElementById("sum");
+  s.className = "sum " + (free > 0 ? "ok" : "ko");
+  s.textContent = free > 0 ? free + (free > 1 ? " bornes libres" : " borne libre") + " sur " + N : "Aucune borne libre pour le moment";
+  const g = document.getElementById("grid");
+  g.innerHTML = "";
+  for (let i = 1; i <= N; i++) {
+    const id = "b" + i, d = state[id];
+    const c = document.createElement("div");
+    c.className = "card " + d.status;
+    const nm = document.createElement("div"); nm.className = "name"; nm.textContent = "Borne " + i; c.appendChild(nm);
+    const st = document.createElement("div"); st.className = "st"; st.textContent = LABEL[d.status]; c.appendChild(st);
+    const mt = document.createElement("div"); mt.className = "meta";
+    mt.textContent = (d.status === "occupee" && d.until ? "Libre vers " + d.until + " · " : "") + ago(d.ts); c.appendChild(mt);
+    const b = document.createElement("div"); b.className = "btns";
+    ["libre", "occupee", "off"].forEach(function (v) {
+      const x = document.createElement("button"); x.textContent = LABEL[v];
+      if (d.status === v) x.className = "on";
+      x.onclick = function () { save(id, { status: v, until: v === "occupee" ? d.until : "", ts: Date.now() }); };
+      b.appendChild(x);
+    });
+    c.appendChild(b);
+    if (d.status === "occupee") {
+      const l = document.createElement("label"); l.textContent = "Heure de fin estimée (facultatif)"; c.appendChild(l);
+      const t = document.createElement("input"); t.type = "time"; t.value = d.until || "";
+      t.onchange = function () { save(id, { status: "occupee", until: t.value, ts: Date.now() }); };
+      c.appendChild(t);
+    }
+    g.appendChild(c);
+  }
+  const n = document.getElementById("note");
+  n.className = "note" + (errMsg ? " err" : "");
+  n.textContent = errMsg || (shared ? "Statut partagé en direct entre tous les utilisateurs." : "Mode local : Firebase n’est pas encore configuré, le statut n’est pas partagé.");
+}
+
+async function save(id, data) {
+  state[id] = data; render();
+  if (!col) return;
+  try { await setDoc(doc(col, id), data); errMsg = ""; }
+  catch (e) { console.error(e); errMsg = "Impossible d’enregistrer (vérifiez les règles Firebase)."; render(); }
 }
 
 render();
-setInterval(render,60000);
+setInterval(render, 60000);
 
-(async function(){
- try{
-  if(!window.claude||!window.claude.use)return;
-  var db=await window.claude.use("db");
-  if(!db)return;
-  col=db.collection("bornes");shared=true;
-  col.onSnapshot(function(snap){
-   var docs=snap.docs||[];
-   docs.forEach(function(d){
-    var v=typeof d.data==="function"?d.data():d.data;
-    if(v&&state[d.id])state[d.id]={status:v.status||"libre",until:v.until||"",ts:v.ts||0};
-   });
-   render();
-  },function(e){console.error(e);shared=false;render()});
-  render();
- }catch(e){console.error(e)}
-})();
-})();
+if (!firebaseConfig.apiKey.startsWith("COLLE_ICI")) {
+  try {
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    col = collection(db, "bornes");
+    shared = true;
+    onSnapshot(col, function (snap) {
+      snap.forEach(function (d) {
+        const v = d.data();
+        if (state[d.id]) state[d.id] = { status: v.status || "libre", until: v.until || "", ts: v.ts || 0 };
+      });
+      errMsg = ""; render();
+    }, function (e) { console.error(e); shared = false; errMsg = "Connexion à Firebase impossible (vérifiez la configuration et les règles)."; render(); });
+    render();
+  } catch (e) { console.error(e); errMsg = "Erreur de configuration Firebase."; render(); }
+}
 </script>
 </body>
 </html>
