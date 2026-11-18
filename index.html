@@ -27,18 +27,6 @@ button{font:inherit;font-size:14px;padding:9px;border-radius:9px;border:1px soli
 button.on{font-weight:700;border-color:var(--tx)}
 input[type=time]{font:inherit;font-size:14px;padding:7px;border-radius:9px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);width:100%;margin-top:8px}
 label{font-size:12px;color:var(--mut);display:block;margin-top:8px}
-.me{display:flex;gap:8px;align-items:center;margin-bottom:16px}
-.me label{margin:0;font-size:14px;white-space:nowrap}
-.me select,.me input{flex:1;min-width:0;font:inherit;font-size:15px;padding:9px;border-radius:9px;border:1px solid var(--bd);background:var(--card);color:var(--tx)}
-.ov{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px;z-index:10}
-.ov[hidden]{display:none}
-.dlg{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:18px;width:100%;max-width:320px}
-.dt{font-weight:700;margin-bottom:10px}
-.dlg select{width:100%;font:inherit;font-size:15px;padding:10px;border-radius:9px;border:1px solid var(--bd);background:var(--bg);color:var(--tx)}
-.dact{display:flex;gap:8px;margin-top:12px}.dact button{flex:1}
-.wait{margin-top:8px;padding:7px 9px;border-radius:9px;font-size:13px;font-weight:600;background:var(--bg);border:1px dashed var(--bd)}
-.wait.go{background:#fff3c4;color:#6b4e00;border:1px solid #e6c200}
-button:disabled{opacity:.45;cursor:not-allowed}
 .note{color:var(--mut);font-size:12px;margin-top:16px;text-align:center}
 .note.err{color:var(--ko)}
 </style>
@@ -47,8 +35,6 @@ button:disabled{opacity:.45;cursor:not-allowed}
 <main>
 <h1>⚡ Bornes de recharge</h1>
 <p class="sub">Mettez à jour l’état de la borne quand vous branchez ou débranchez votre voiture.</p>
-<div id="ov" class="ov" hidden><div class="dlg"><div class="dt">Qui êtes-vous ?</div><select id="dsel"></select><div class="dact"><button id="dno">Annuler</button></div></div></div>
-<div id="ov2" class="ov" hidden><div class="dlg"><div class="dt">Heure de fin estimée</div><input type="time" id="tin"><div class="dact"><button id="tok">Valider</button><button id="tno">Annuler</button></div></div></div>
 <div id="sum" class="sum">Chargement…</div>
 <div id="grid" class="grid"></div>
 <p class="note" id="note"></p>
@@ -57,6 +43,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getFirestore, collection, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
+/* ====== A REMPLACER par les valeurs de votre projet Firebase ====== */
 const firebaseConfig = {
   apiKey: "AIzaSyDBNF02q4T23p_dMwFrxT2NOK3a8WfUV0k",
   authDomain: "bornes-vdm.firebaseapp.com",
@@ -65,34 +52,14 @@ const firebaseConfig = {
   messagingSenderId: "614048764769",
   appId: "1:614048764769:web:839225a65a9acae2eb2b20"
 };
+/* ================================================================== */
 
-window.addEventListener("error",function(e){var n=document.getElementById("note");if(n){n.className="note err";n.textContent="Erreur : "+e.message;}});
-/* ===== LISTE DES PRÉNOMS : modifiez simplement cette liste ===== */
-const PRENOMS = ["Isabelle DEVEY", "Johann AOUSTIN", "Laetitia CAMPELLO", "Badge test", "Amandine BUSSO", "Olivier CLAIR", "Christophe BERRALDIN", "Jessica MAILLE", "Laurent MARS", "Olivier DUPENNE", "Gilles GAVAUDAN", "Benedicte FOURMEAUX", "Marc CHARTIER", "Romain BLANQUE", "Albert OLOCAN"];
-/* ================================================================ */
 const N = 4;
 const LABEL = { libre: "Libre", occupee: "Occupée", off: "Hors service" };
 const state = {};
-for (let i = 1; i <= N; i++) state["b" + i] = { status: "libre", until: "", ts: 0, name: "", next: "" };
+for (let i = 1; i <= N; i++) state["b" + i] = { status: "libre", until: "", ts: 0 };
 
 let col = null, shared = false, errMsg = "";
-const dsel = document.getElementById("dsel"), ov = document.getElementById("ov");
-["", ...PRENOMS].forEach(function (p) { const o = document.createElement("option"); o.value = p; o.textContent = p || "Choisissez votre nom"; dsel.appendChild(o); });
-const tin = document.getElementById("tin"), ov2 = document.getElementById("ov2");
-let pendingT = null;
-function askTime(cb) { tin.value = ""; pendingT = cb; ov2.hidden = false; tin.focus(); }
-document.getElementById("tno").onclick = function () { pendingT = null; ov2.hidden = true; };
-document.getElementById("tok").onclick = function () {
-  if (!tin.value) { tin.focus(); return; }
-  const cb = pendingT, t = tin.value; pendingT = null; ov2.hidden = true; if (cb) cb(t);
-};
-let pending = null;
-function ask(cb) { dsel.value = ""; pending = cb; ov.hidden = false; dsel.focus(); }
-document.getElementById("dno").onclick = function () { pending = null; ov.hidden = true; };
-dsel.onchange = function () {
-  if (!dsel.value) { dsel.focus(); return; }
-  const cb = pending, n = dsel.value; pending = null; ov.hidden = true; if (cb) cb(n);
-};
 
 function ago(ts) {
   if (!ts) return "";
@@ -101,7 +68,6 @@ function ago(ts) {
   if (m < 60) return "mis à jour il y a " + m + " min";
   return "mis à jour il y a " + Math.round(m / 60) + " h";
 }
-function upd(id, patch) { save(id, Object.assign({}, state[id], patch, { ts: Date.now() })); }
 
 function render() {
   let free = 0;
@@ -118,74 +84,54 @@ function render() {
     const nm = document.createElement("div"); nm.className = "name"; nm.textContent = "Borne " + i; c.appendChild(nm);
     const st = document.createElement("div"); st.className = "st"; st.textContent = LABEL[d.status]; c.appendChild(st);
     const mt = document.createElement("div"); mt.className = "meta";
-    mt.textContent = (d.status === "occupee" ? (d.name ? d.name + " · " : "") + (d.until ? "libre vers " + d.until + " · " : "") : "") + ago(d.ts); c.appendChild(mt);
-    if (d.next) {
-      const w = document.createElement("div");
-      if (d.status === "libre") { w.className = "wait go"; w.textContent = "🔔 " + d.next + " a besoin de charge"; }
-      else { w.className = "wait"; w.textContent = "⏳ Prochain : " + d.next; }
-      c.appendChild(w);
-    }
+    mt.textContent = (d.status === "occupee" && d.until ? "Libre vers " + d.until + " · " : "") + ago(d.ts); c.appendChild(mt);
     const b = document.createElement("div"); b.className = "btns";
     ["libre", "occupee", "off"].forEach(function (v) {
       const x = document.createElement("button"); x.textContent = LABEL[v];
       if (d.status === v) x.className = "on";
-      x.onclick = function () {
-        if (v !== "occupee") { upd(id, { status: v, name: "", until: "" }); return; }
-        ask(function (n) {
-          askTime(function (t) {
-            const c = state[id];
-            upd(id, { status: "occupee", name: n, until: t, next: c.next === n ? "" : c.next });
-          });
-        });
-      };
+      x.onclick = function () { save(id, { status: v, until: v === "occupee" ? d.until : "", ts: Date.now() }); };
       b.appendChild(x);
     });
-    const r = document.createElement("button");
-    r.textContent = d.next ? "Déjà réservé" : "Réserver le prochain créneau";
-    r.disabled = d.status !== "occupee" || !!d.next;
-    r.onclick = function () { ask(function (n) { upd(id, { next: n }); }); };
-    b.appendChild(r);
-    if (d.next) {
-      const k = document.createElement("button"); k.textContent = "Annuler la réservation";
-      k.onclick = function () { ask(function (n) {
-        if (state[id].next !== n) { errMsg = "Seule la personne qui a réservé peut annuler."; render(); return; }
-        errMsg = ""; upd(id, { next: "" });
-      }); };
-      b.appendChild(k);
-    }
     c.appendChild(b);
     if (d.status === "occupee") {
-      const l = document.createElement("label"); l.textContent = "Heure de fin estimée "; c.appendChild(l);
+      const l = document.createElement("label"); l.textContent = "Heure de fin estimée (facultatif)"; c.appendChild(l);
       const t = document.createElement("input"); t.type = "time"; t.value = d.until || "";
-      t.onchange = function () { upd(id, { until: t.value }); };
+      t.onchange = function () { save(id, { status: "occupee", until: t.value, ts: Date.now() }); };
       c.appendChild(t);
     }
     g.appendChild(c);
   }
   const n = document.getElementById("note");
   n.className = "note" + (errMsg ? " err" : "");
-  n.textContent = errMsg || (shared ? "Statut partagé en direct entre tous les utilisateurs." : "Mode local : le statut n’est pas partagé.");
+  n.textContent = errMsg || (shared ? "Statut partagé en direct entre tous les utilisateurs." : "Mode local : Firebase n’est pas encore configuré, le statut n’est pas partagé.");
 }
-function fromDoc(v) { return { status: v.status || "libre", until: v.until || "", ts: v.ts || 0, name: v.name || "", next: v.next || "" }; }
-render();
-setInterval(render, 60000);
+
 async function save(id, data) {
   state[id] = data; render();
   if (!col) return;
   try { await setDoc(doc(col, id), data); errMsg = ""; }
   catch (e) { console.error(e); errMsg = "Impossible d’enregistrer (vérifiez les règles Firebase)."; render(); }
 }
-try {
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
-  col = collection(db, "bornes");
-  shared = true;
-  onSnapshot(col, function (snap) {
-    snap.forEach(function (d) { if (state[d.id]) state[d.id] = fromDoc(d.data()); });
-    errMsg = ""; render();
-  }, function (e) { console.error(e); shared = false; errMsg = "Connexion à Firebase impossible (vérifiez la configuration et les règles)."; render(); });
-  render();
-} catch (e) { console.error(e); errMsg = "Erreur de configuration Firebase."; render(); }
+
+render();
+setInterval(render, 60000);
+
+if (!firebaseConfig.apiKey.startsWith("COLLE_ICI")) {
+  try {
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    col = collection(db, "bornes");
+    shared = true;
+    onSnapshot(col, function (snap) {
+      snap.forEach(function (d) {
+        const v = d.data();
+        if (state[d.id]) state[d.id] = { status: v.status || "libre", until: v.until || "", ts: v.ts || 0 };
+      });
+      errMsg = ""; render();
+    }, function (e) { console.error(e); shared = false; errMsg = "Connexion à Firebase impossible (vérifiez la configuration et les règles)."; render(); });
+    render();
+  } catch (e) { console.error(e); errMsg = "Erreur de configuration Firebase."; render(); }
+}
 </script>
 </body>
 </html>
