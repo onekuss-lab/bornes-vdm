@@ -36,6 +36,9 @@ label{font-size:12px;color:var(--mut);display:block;margin-top:8px}
 .dt{font-weight:700;margin-bottom:10px}
 .dlg select{width:100%;font:inherit;font-size:15px;padding:10px;border-radius:9px;border:1px solid var(--bd);background:var(--bg);color:var(--tx)}
 .dact{display:flex;gap:8px;margin-top:12px}.dact button{flex:1}
+.tsel{display:flex;gap:8px;align-items:center;font-size:24px;font-weight:700}
+.tsel select{flex:1;font:inherit;font-size:20px;padding:10px;border-radius:9px;border:1px solid var(--bd);background:var(--bg);color:var(--tx)}
+.tcard{font-size:16px;margin-top:4px}.tcard select{font-size:15px;padding:7px}
 .wait{margin-top:8px;padding:7px 9px;border-radius:9px;font-size:13px;font-weight:600;background:var(--bg);border:1px dashed var(--bd)}
 .wait.go{background:#fff3c4;color:#6b4e00;border:1px solid #e6c200}
 button:disabled{opacity:.45;cursor:not-allowed}
@@ -48,7 +51,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 <h1>⚡ Bornes de recharge</h1>
 <p class="sub">Mettez à jour l’état de la borne quand vous branchez ou débranchez votre voiture.</p>
 <div id="ov" class="ov" hidden><div class="dlg"><div class="dt">Qui êtes-vous ?</div><select id="dsel"></select><div class="dact"><button id="dno">Annuler</button></div></div></div>
-<div id="ov2" class="ov" hidden><div class="dlg"><div class="dt">Heure de fin estimée</div><input type="time" id="tin"><div class="dact"><button id="tok">Valider</button><button id="tno">Annuler</button></div></div></div>
+<div id="ov2" class="ov" hidden><div class="dlg"><div class="dt">Heure de fin estimée</div><div class="tsel"><select id="th"></select><span>:</span><select id="tm"></select></div><div class="dact"><button id="tok">Valider</button><button id="tno">Annuler</button></div></div></div>
 <div id="sum" class="sum">Chargement…</div>
 <div id="grid" class="grid"></div>
 <p class="note" id="note"></p>
@@ -78,13 +81,19 @@ for (let i = 1; i <= N; i++) state["b" + i] = { status: "libre", until: "", ts: 
 let col = null, shared = false, errMsg = "";
 const dsel = document.getElementById("dsel"), ov = document.getElementById("ov");
 ["", ...PRENOMS.slice().sort(function (a, b) { return a.localeCompare(b, "fr"); })].forEach(function (p) { const o = document.createElement("option"); o.value = p; o.textContent = p || "Choisissez votre nom"; dsel.appendChild(o); });
-const tin = document.getElementById("tin"), ov2 = document.getElementById("ov2");
+const th = document.getElementById("th"), tm = document.getElementById("tm"), ov2 = document.getElementById("ov2");
+const p2 = function (n) { return (n < 10 ? "0" : "") + n; };
+for (let h = 0; h < 24; h++) { const o = document.createElement("option"); o.value = o.textContent = p2(h); th.appendChild(o); }
+for (let m = 0; m < 60; m += 5) { const o = document.createElement("option"); o.value = o.textContent = p2(m); tm.appendChild(o); }
 let pendingT = null;
-function askTime(cb) { tin.value = ""; pendingT = cb; ov2.hidden = false; tin.focus(); }
+function askTime(cb) {
+  const d = new Date(Date.now() + 3600000); d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5);
+  th.value = p2(d.getHours()); tm.value = p2(d.getMinutes());
+  pendingT = cb; ov2.hidden = false;
+}
 document.getElementById("tno").onclick = function () { pendingT = null; ov2.hidden = true; };
 document.getElementById("tok").onclick = function () {
-  if (!tin.value) { tin.focus(); return; }
-  const cb = pendingT, t = tin.value; pendingT = null; ov2.hidden = true; if (cb) cb(t);
+  const cb = pendingT, t = th.value + ":" + tm.value; pendingT = null; ov2.hidden = true; if (cb) cb(t);
 };
 let pending = null;
 function ask(cb) { dsel.value = ""; pending = cb; ov.hidden = false; dsel.focus(); }
@@ -155,10 +164,20 @@ function render() {
     }
     c.appendChild(b);
     if (d.status === "occupee") {
-      const l = document.createElement("label"); l.textContent = "Heure de fin estimée "; c.appendChild(l);
-      const t = document.createElement("input"); t.type = "time"; t.value = d.until || "";
-      t.onchange = function () { upd(id, { until: t.value }); };
-      c.appendChild(t);
+      const l = document.createElement("label"); l.textContent = "Heure de fin estimée"; c.appendChild(l);
+      const ts = document.createElement("div"); ts.className = "tsel tcard";
+      const hs = document.createElement("select"), ms = document.createElement("select");
+      for (let h = 0; h < 24; h++) { const o = document.createElement("option"); o.value = o.textContent = p2(h); hs.appendChild(o); }
+      for (let m = 0; m < 60; m += 5) { const o = document.createElement("option"); o.value = o.textContent = p2(m); ms.appendChild(o); }
+      const parts = (d.until || "").split(":");
+      if (parts.length === 2) {
+        if (!ms.querySelector('option[value="' + parts[1] + '"]')) { const o = document.createElement("option"); o.value = o.textContent = parts[1]; ms.appendChild(o); }
+        hs.value = parts[0]; ms.value = parts[1];
+      }
+      const sep = document.createElement("span"); sep.textContent = ":";
+      const chg = function () { upd(id, { until: hs.value + ":" + ms.value }); };
+      hs.onchange = chg; ms.onchange = chg;
+      ts.append(hs, sep, ms); c.appendChild(ts);
     }
     g.appendChild(c);
   }
