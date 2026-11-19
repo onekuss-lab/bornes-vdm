@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Bornes de recharge</title>
 <style>
-:root{--bg:#f4f6f8;--card:#fff;--tx:#1b2430;--mut:#6b7785;--bd:#dde3ea;--ok:#1e9e5a;--ko:#d6453d;--off:#8a94a0;--okbg:#e4f6ec;--kobg:#fbe8e6;--hsbg:#f3bdb8;
+:root{--bg:#f4f6f8;--card:#fff;--tx:#1b2430;--mut:#6b7785;--bd:#dde3ea;--ok:#1e9e5a;--ko:#d6453d;--off:#8a94a0;--okbg:#e4f6ec;--kobg:#fbe8e6;--hsbg:#f3bdb8;--bl:#1d6fd6;--blbg:#e1edfc;
 box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-@media (prefers-color-scheme:dark){:root{--bg:#12171d;--card:#1b222b;--tx:#e8edf2;--mut:#98a4b1;--bd:#2c3642;--ok:#3ccf82;--ko:#ff7a70;--okbg:#14301f;--kobg:#3a1d1b;--hsbg:#5c2724;color-scheme:dark}}
+@media (prefers-color-scheme:dark){:root{--bg:#12171d;--card:#1b222b;--tx:#e8edf2;--mut:#98a4b1;--bd:#2c3642;--ok:#3ccf82;--ko:#ff7a70;--okbg:#14301f;--kobg:#3a1d1b;--hsbg:#5c2724;--bl:#6fb0ff;--blbg:#12294a;color-scheme:dark}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
 main{max-width:640px;margin:0 auto;padding:20px 16px 32px}
@@ -39,6 +39,9 @@ label{font-size:12px;color:var(--mut);display:block;margin-top:8px}
 .tsel{display:flex;gap:8px;align-items:center;font-size:24px;font-weight:700}
 .tsel select{flex:1;font:inherit;font-size:20px;padding:10px;border-radius:9px;border:1px solid var(--bd);background:var(--bg);color:var(--tx)}
 .tcard{font-size:16px;margin-top:4px}.tcard select{font-size:15px;padding:7px}
+.toast{position:fixed;top:12px;left:12px;right:12px;max-width:520px;margin:0 auto;z-index:20;background:#1e9e5a;color:#fff;padding:14px 16px;border-radius:12px;font-weight:700;box-shadow:0 6px 20px rgba(0,0,0,.3);cursor:pointer}
+.toast[hidden]{display:none}
+.card.gu.libre{background:var(--blbg);border-top-color:var(--bl)}.gu.libre .st{color:var(--bl)}
 .wait{margin-top:8px;padding:7px 9px;border-radius:9px;font-size:13px;font-weight:600;background:var(--bg);border:1px dashed var(--bd)}
 .wait.go{background:#fff3c4;color:#6b4e00;border:1px solid #e6c200}
 button:disabled{opacity:.45;cursor:not-allowed}
@@ -52,6 +55,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 <p class="sub">Mettez à jour l’état de la borne quand vous branchez ou débranchez votre voiture.</p>
 <div id="ov" class="ov" hidden><div class="dlg"><div class="dt">Qui êtes-vous ?</div><select id="dsel"></select><div class="dact"><button id="dno">Annuler</button></div></div></div>
 <div id="ov2" class="ov" hidden><div class="dlg"><div class="dt">Heure de fin estimée</div><div class="tsel"><select id="th"></select><span>:</span><select id="tm"></select></div><div class="dact"><button id="tok">Valider</button><button id="tno">Annuler</button></div></div></div>
+<div id="toast" class="toast" hidden></div>
 <div id="sum" class="sum">Chargement…</div>
 <div id="grid" class="grid"></div>
 <p class="note" id="note"></p>
@@ -73,7 +77,12 @@ window.addEventListener("error",function(e){var n=document.getElementById("note"
 /* ===== LISTE DES PRÉNOMS : modifiez simplement cette liste ===== */
 const PRENOMS = ["Isabelle DEVEY", "Johann AOUSTIN", "Laetitia CAMPELLO", "Badge test", "Amandine BUSSO", "Olivier CLAIR", "Christophe BERRALDIN", "Jessica MAILLE", "Laurent MARS", "Olivier DUPENNE", "Gilles GAVAUDAN", "Benedicte FOURMEAUX", "Marc CHARTIER", "Romain BLANQUE", "Albert OLOCAN"];
 /* ================================================================ */
-const N = 4;
+const BORNES = [
+  { id: "b1", label: "Borne 1" }, { id: "b2", label: "Borne 2" }, { id: "b3", label: "Borne 3" }, { id: "b4", label: "Borne 4" },
+  { id: "b5", label: "Green Up 1", blue: true }, { id: "b6", label: "Green Up 2", blue: true }
+];
+const N = BORNES.length;
+const labelOf = function (id) { const b = BORNES.filter(function (x) { return x.id === id; })[0]; return b ? b.label : id; };
 const LABEL = { libre: "Libre", occupee: "Occupée", off: "Hors service" };
 const state = {};
 for (let i = 1; i <= N; i++) state["b" + i] = { status: "libre", until: "", ts: 0, name: "", next: "" };
@@ -123,8 +132,8 @@ function render() {
   for (let i = 1; i <= N; i++) {
     const id = "b" + i, d = state[id];
     const c = document.createElement("div");
-    c.className = "card " + d.status;
-    const nm = document.createElement("div"); nm.className = "name"; nm.textContent = "Borne " + i; c.appendChild(nm);
+    c.className = "card " + d.status + (BORNES[i - 1].blue ? " gu" : "");
+    const nm = document.createElement("div"); nm.className = "name"; nm.textContent = BORNES[i - 1].label; c.appendChild(nm);
     const st = document.createElement("div"); st.className = "st"; st.textContent = LABEL[d.status]; c.appendChild(st);
     const mt = document.createElement("div"); mt.className = "meta";
     mt.textContent = (d.status === "occupee" ? (d.name ? d.name + " · " : "") + (d.until ? "libre vers " + d.until + " · " : "") : "") + ago(d.ts); c.appendChild(mt);
@@ -152,7 +161,10 @@ function render() {
     const r = document.createElement("button");
     r.textContent = d.next ? "Déjà réservé" : "Réserver le prochain créneau";
     r.disabled = d.status !== "occupee" || !!d.next;
-    r.onclick = function () { ask(function (n) { upd(id, { next: n }); }); };
+    r.onclick = function () {
+      try { if ("Notification" in window && Notification.permission === "default") Notification.requestPermission(); } catch (e) {}
+      ask(function (n) { try { localStorage.setItem("borne-attente", n); } catch (e) {} upd(id, { next: n }); });
+    };
     b.appendChild(r);
     if (d.next) {
       const k = document.createElement("button"); k.textContent = "Annuler la réservation";
@@ -183,7 +195,29 @@ function render() {
   }
   const n = document.getElementById("note");
   n.className = "note" + (errMsg ? " err" : "");
-  n.textContent = errMsg || (shared ? "Statut partagé en direct entre tous les utilisateurs." : "Mode local : le statut n’est pas partagé.");
+  n.textContent = errMsg || (shared ? "Statut partagé en direct. Réservez un créneau pour être prévenu quand la borne se libère (page ouverte)." : "Mode local : le statut n’est pas partagé.");
+}
+let loaded = false;
+const seen = {};
+function watcher() { try { return localStorage.getItem("borne-attente") || ""; } catch (e) { return ""; } }
+function notify(id) {
+  const msg = labelOf(id) + " est libre : c’est à vous de charger !";
+  const t = document.getElementById("toast"); t.textContent = "🔔 " + msg + " (toucher pour fermer)"; t.hidden = false;
+  t.onclick = function () { t.hidden = true; };
+  try { if (navigator.vibrate) navigator.vibrate([300, 150, 300]); } catch (e) {}
+  try {
+    if ("Notification" in window && Notification.permission === "granted") {
+      if (navigator.serviceWorker && navigator.serviceWorker.getRegistration) {
+        navigator.serviceWorker.getRegistration().then(function (r) { if (r) r.showNotification("Bornes de recharge", { body: msg }); else new Notification("Bornes de recharge", { body: msg }); }).catch(function () {});
+      } else new Notification("Bornes de recharge", { body: msg });
+    }
+  } catch (e) {}
+}
+function applyDoc(id, v) {
+  if (!state[id]) return;
+  const n = fromDoc(v), was = seen[id];
+  seen[id] = n.status; state[id] = n;
+  if (loaded && was === "occupee" && n.status === "libre" && n.next && n.next === watcher()) notify(id);
 }
 function fromDoc(v) { return { status: v.status || "libre", until: v.until || "", ts: v.ts || 0, name: v.name || "", next: v.next || "" }; }
 render();
@@ -200,7 +234,7 @@ try {
   col = collection(db, "bornes");
   shared = true;
   onSnapshot(col, function (snap) {
-    snap.forEach(function (d) { if (state[d.id]) state[d.id] = fromDoc(d.data()); });
+    snap.forEach(function (d) { applyDoc(d.id, d.data()); }); loaded = true;
     errMsg = ""; render();
   }, function (e) { console.error(e); shared = false; errMsg = "Connexion à Firebase impossible (vérifiez la configuration et les règles)."; render(); });
   render();
